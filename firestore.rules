@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ------------------------------------------------------------------
+    // GLOBAL Safety Net: Default deny catch-all
+    // ------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ------------------------------------------------------------------
+    // STANDALONE RELATIONAL & BOUNDARY HELPERS
+    // ------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // ------------------------------------------------------------------
+    // RULE-BASED ROLE RESOLUTION HELPERS
+    // ------------------------------------------------------------------
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isFarmer() {
+      return isSignedIn() && (
+        getUserRole() == 'farmer' ||
+        exists(/databases/$(database)/documents/farmers/$(request.auth.uid))
+      );
+    }
+
+    function isBuyer() {
+      return isSignedIn() && (
+        getUserRole() == 'buyer' ||
+        exists(/databases/$(database)/documents/buyers/$(request.auth.uid))
+      );
+    }
+
+    // ------------------------------------------------------------------
+    // CATALOG VALIDATION HELPERS
+    // ------------------------------------------------------------------
+    function isValidProduct(data) {
+      return data.price is number && data.price > 0 &&
+             data.stock is number && data.stock >= 0;
+    }
+
+    // Since firestore rules cannot loop over unbounded list maps, we sequentially
+    // inspect the first 10 item slots of an order for any farmers' attribution.
+    function isFarmerForOrder(orderData) {
+      return orderData.items[0].farmerId == request.auth.uid ||
+             (orderData.items.size() > 1 && orderData.items[1].farmerId == request.auth.uid) ||
+             (orderData.items.size() > 2 && orderData.items[2].farmerId == request.auth.uid) ||
+             (orderData.items.size() > 3 && orderData.items[3].farmerId == request.auth.uid) ||
+             (orderData.items.size() > 4 && orderData.items[4].farmerId == request.auth.uid) ||
+             (orderData.items.size() > 5 && orderData.items[5].farmerId == request.auth.uid) ||
+             (orderData.items.size() > 6 && orderData.items[6].farmerId == request.auth.uid) ||
+             (orderData.items.size() > 7 && orderData.items[7].farmerId == request.auth.uid) ||
+             (orderData.items.size() > 8 && orderData.items[8].farmerId == request.auth.uid) ||
+             (orderData.items.size() > 9 && orderData.items[9].farmerId == request.auth.uid);
+    }
+
+    function isOrderBuyer(orderData) {
+      return orderData.buyerId == request.auth.uid || orderData.consumerId == request.auth.uid;
+    }
+
+    // ------------------------------------------------------------------
+    // COLLECTION-SPECIFIC BOUNDARY MATCH CODES
+    // ------------------------------------------------------------------
+
+    // 1. Users collection rules
+    match /users/{userId} {
+      allow read, update: if isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId);
+    }
+
+    // 2. Farmers collection rules
+    match /farmers/{farmerId} {
+      allow read: if isSignedIn();
+      allow update: if isOwner(farmerId);
+      allow create: if isSignedIn() && isOwner(farmerId);
+    }
+
+    // 3. Buyers collection rules
+    match /buyers/{buyerId} {
+      allow read, update: if isOwner(buyerId);
+      allow create: if isSignedIn() && isOwner(buyerId);
+    }
+
+    // 4. Products collection rules
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isFarmer() && incoming().farmerId == request.auth.uid && isValidProduct(incoming());
+      allow update: if isSignedIn() && isFarmer() && resource.data.farmerId == request.auth.uid && incoming().farmerId == request.auth.uid && isValidProduct(incoming());
+      allow delete: if isSignedIn() && isFarmer() && resource.data.farmerId == request.auth.uid;
+    }
+
+    // Backwards Compatibility / Duplicate Map: Crops collection rules (exactly like products but using crops path)
+    match /crops/{cropId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isFarmer() && incoming().farmerId == request.auth.uid && isValidProduct(incoming());
+      allow update: if isSignedIn() && isFarmer() && resource.data.farmerId == request.auth.uid && incoming().farmerId == request.auth.uid && isValidProduct(incoming());
+      allow delete: if isSignedIn() && isFarmer() && resource.data.farmerId == request.auth.uid;
+    }
+
+    // 5. Orders collection rules
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && (isOrderBuyer(resource.data) || isFarmerForOrder(resource.data));
+      allow create: if isSignedIn() && isBuyer() && (incoming().buyerId == request.auth.uid || incoming().consumerId == request.auth.uid);
+      allow update: if isSignedIn() && (
+        (isOrderBuyer(resource.data) && incoming().buyerId == existing().buyerId) ||
+        (isFarmerForOrder(resource.data) && isFarmer() && incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+      );
+    }
+
+    // 6. Wishlist collection rules
+    match /wishlist/{wishlistId} {
+      allow read, write: if isOwner(wishlistId);
+    }
+
+    // 7. Notifications collection rules
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+    }
+
+    // 8. Feedbacks collection rules (for direct crop review compatibility)
+    match /feedbacks/{feedbackId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isBuyer();
+      allow update, delete: if false;
+    }
+  }
+}

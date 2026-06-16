@@ -1,0 +1,6 @@
+{
+  "name": "Farmer Direct",
+  "description": "An elegant, nature-inspired marketplace connecting local farmers directly with consumers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
