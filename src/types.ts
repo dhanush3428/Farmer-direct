@@ -87,6 +87,7 @@ export interface Order {
   buyerId?: string;
   buyerName?: string;
   buyerContact?: string;
+  farmerId?: string;
 
   // Legacy compatibility fields
   consumerId?: string;

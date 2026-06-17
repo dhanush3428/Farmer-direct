@@ -35,6 +35,7 @@ interface BuyerDashboardProps {
   currentBuyer: BuyerProfile;
   crops: CropProduct[];
   orders: Order[];
+  ordersLoading?: boolean;
   farmers: FarmerProfile[];
   feedbacks: FarmerFeedback[];
   notifications: AppNotification[];
@@ -51,6 +52,7 @@ export default function BuyerDashboard({
   currentBuyer,
   crops,
   orders,
+  ordersLoading = false,
   farmers,
   feedbacks,
   notifications,
@@ -264,6 +266,7 @@ export default function BuyerDashboard({
             <span className="text-[10px] font-mono font-bold tracking-widest uppercase text-slate-500 block px-3">Portals</span>
             
             <button
+              id="buyer-sidebar-home"
               onClick={() => setActiveTab('home')}
               className={`w-full py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center space-x-3 transition-all ${activeTab === 'home' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
             >
@@ -272,6 +275,7 @@ export default function BuyerDashboard({
             </button>
 
             <button
+              id="buyer-sidebar-market"
               onClick={() => setActiveTab('market')}
               className={`w-full py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center space-x-3 transition-all ${activeTab === 'market' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
             >
@@ -280,6 +284,7 @@ export default function BuyerDashboard({
             </button>
 
             <button
+              id="buyer-sidebar-orders"
               onClick={() => setActiveTab('orders')}
               className={`w-full py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center space-x-3 transition-all ${activeTab === 'orders' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
             >
@@ -293,6 +298,7 @@ export default function BuyerDashboard({
             </button>
 
             <button
+              id="buyer-sidebar-wishlist"
               onClick={() => setActiveTab('wishlist')}
               className={`w-full py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center space-x-3 transition-all ${activeTab === 'wishlist' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
             >
@@ -769,96 +775,116 @@ export default function BuyerDashboard({
                   </div>
                 </div>
 
-                {buyerOrders.map(order => (
-                  <div key={order.id} className="bg-slate-900/50 rounded-2xl border border-slate-800 p-5 space-y-4">
-                    <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center pb-4 border-b border-slate-950 font-mono text-xs">
-                      <div>
-                        <span className="text-slate-500 uppercase font-black tracking-widest block text-[9.5px]">Harvest booking ID</span>
-                        <strong className="text-white mt-1 block">{order.id}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 uppercase font-black tracking-widest block text-[9.5px]">Receipt Date</span>
-                        <span className="text-slate-300 block">{new Date(order.date).toLocaleDateString()}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 uppercase font-black tracking-widest block text-[9.5px]">Status Tracker</span>
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-block mt-1 ${
-                          order.status === 'Pending' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                          order.status === 'Accepted' || order.status === 'Ready for Pickup' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' :
-                          order.status === 'Completed' || order.status === 'Delivered' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                          'bg-red-500/10 text-red-400 border border-red-500/20'
-                        }`}>
-                          {order.status}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 font-mono text-xs">
-                      <div className="flex justify-between font-bold text-slate-500 tracking-wider">
-                        <span>Items Purchased</span>
-                        <span>Amount Subtotal</span>
-                      </div>
-                      {order.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between text-slate-300">
-                          <span>{item.productName} (x{item.quantity} {item.unit}) <span className="text-emerald-400">@{item.farmName}</span></span>
-                          <span>₹{(item.price * item.quantity)}</span>
+                {ordersLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="bg-slate-900/30 rounded-2xl border border-slate-800/60 p-5 space-y-4 animate-pulse">
+                        <div className="flex justify-between items-center pb-4 border-b border-slate-900">
+                          <div className="h-4 bg-slate-800 rounded w-1/4" />
+                          <div className="h-4 bg-slate-800 rounded w-1/6" />
                         </div>
-                      ))}
-                    </div>
-
-                    <div className="pt-4 border-t border-slate-950 flex flex-col md:flex-row gap-4 justify-between font-mono text-xs text-slate-400">
-                      <div>
-                        <span className="text-slate-500 font-bold block text-[10px]">Delivery/Collector Location</span>
-                        <span className="text-slate-300 mt-0.5 block">{order.deliveryAddress}</span>
+                        <div className="space-y-3 pt-2">
+                          <div className="h-3 bg-slate-800 rounded w-1/2" />
+                          <div className="h-3 bg-slate-800 rounded w-1/3" />
+                        </div>
+                        <div className="h-8 bg-slate-800/50 rounded w-full mt-4" />
                       </div>
-                      <div>
-                        <span className="text-slate-500 font-bold block text-[10px]">Collector pickup Slot</span>
-                        <span className="text-slate-300 mt-0.5 block">{order.pickupTime}</span>
-                      </div>
-                      <div className="self-end pt-2 md:pt-0">
-                        <span className="text-slate-500 block font-bold text-right text-[10px]">Paid Grand Total</span>
-                        <strong className="text-lg text-emerald-400 font-black block mt-0.5">₹{order.total}</strong>
-                      </div>
-                    </div>
-
-                    {/* Feedback Rating and reviews form direct */}
-                    {(order.status === 'Completed' || order.status === 'Delivered') && (
-                      <div className="mt-4 pt-4 border-t border-slate-950 flex flex-col space-y-3">
-                        <h4 className="text-xs font-bold font-mono text-white flex items-center space-x-1.5">
-                          <span>⭐ Direct Farm feedback loops</span>
-                        </h4>
-                        {order.feedbackText ? (
-                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-900 italic text-xs text-slate-400">
-                            " {order.feedbackText} " — {order.rating} / 5 Rating stars
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    {buyerOrders.map(order => (
+                      <div key={order.id} className="bg-slate-900/50 rounded-2xl border border-slate-800 p-5 space-y-4">
+                        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center pb-4 border-b border-slate-950 font-mono text-xs">
+                          <div>
+                            <span className="text-slate-500 uppercase font-black tracking-widest block text-[9.5px]">Harvest booking ID</span>
+                            <strong className="text-white mt-1 block">{order.id}</strong>
                           </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-2 items-center">
-                            <span className="text-[11px] text-slate-500 font-mono">Select a product to review:</span>
-                            {order.items.map(item => (
-                              <button
-                                key={item.productId}
-                                onClick={() => {
-                                  setRatingOrder(order);
-                                  setActiveFeedbackProduct(item);
-                                }}
-                                className="px-2.5 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-lg text-[10px] font-bold hover:bg-sky-500 hover:text-slate-950 transition-colors cursor-pointer"
-                              >
-                                Review {item.productName}
-                              </button>
-                            ))}
+                          <div>
+                            <span className="text-slate-500 uppercase font-black tracking-widest block text-[9.5px]">Receipt Date</span>
+                            <span className="text-slate-300 block">{new Date(order.date).toLocaleDateString()}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 uppercase font-black tracking-widest block text-[9.5px]">Status Tracker</span>
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-block mt-1 ${
+                              order.status === 'Pending' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                              order.status === 'Accepted' || order.status === 'Ready for Pickup' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' :
+                              order.status === 'Completed' || order.status === 'Delivered' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                              'bg-red-500/10 text-red-400 border border-red-500/20'
+                            }`}>
+                              {order.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3 font-mono text-xs">
+                          <div className="flex justify-between font-bold text-slate-500 tracking-wider">
+                            <span>Items Purchased</span>
+                            <span>Amount Subtotal</span>
+                          </div>
+                          {order.items.map((item, idx) => (
+                            <div key={idx} className="flex justify-between text-slate-300">
+                              <span>{item.productName} (x{item.quantity} {item.unit}) <span className="text-emerald-400">@{item.farmName}</span></span>
+                              <span>₹{(item.price * item.quantity)}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-950 flex flex-col md:flex-row gap-4 justify-between font-mono text-xs text-slate-400">
+                          <div>
+                            <span className="text-slate-500 font-bold block text-[10px]">Delivery/Collector Location</span>
+                            <span className="text-slate-300 mt-0.5 block">{order.deliveryAddress}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 font-bold block text-[10px]">Collector pickup Slot</span>
+                            <span className="text-slate-300 mt-0.5 block">{order.pickupTime}</span>
+                          </div>
+                          <div className="self-end pt-2 md:pt-0">
+                            <span className="text-slate-500 block font-bold text-right text-[10px]">Paid Grand Total</span>
+                            <strong className="text-lg text-emerald-400 font-black block mt-0.5">₹{order.total}</strong>
+                          </div>
+                        </div>
+
+                        {/* Feedback Rating and reviews form direct */}
+                        {(order.status === 'Completed' || order.status === 'Delivered') && (
+                          <div className="mt-4 pt-4 border-t border-slate-950 flex flex-col space-y-3">
+                            <h4 className="text-xs font-bold font-mono text-white flex items-center space-x-1.5">
+                              <span>⭐ Direct Farm feedback loops</span>
+                            </h4>
+                            {order.feedbackText ? (
+                              <div className="bg-slate-950 p-3 rounded-xl border border-slate-900 italic text-xs text-slate-400">
+                                " {order.feedbackText} " — {order.rating} / 5 Rating stars
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-[11px] text-slate-500 font-mono">Select a product to review:</span>
+                                {order.items.map(item => (
+                                  <button
+                                    key={item.productId}
+                                    onClick={() => {
+                                      setRatingOrder(order);
+                                      setActiveFeedbackProduct(item);
+                                    }}
+                                    className="px-2.5 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-lg text-[10px] font-bold hover:bg-sky-500 hover:text-slate-950 transition-colors cursor-pointer"
+                                  >
+                                    Review {item.productName}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                ))}
+                    ))}
 
-                {buyerOrders.length === 0 && (
-                  <div className="text-center py-16 bg-slate-900/10 rounded-3xl border border-slate-900">
-                    <Calendar className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                    <h4 className="font-bold text-white">No Bookings Recorded</h4>
-                    <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">Purchase fresh vegetables, grains, or dairy from the marketplace to list transactions here!</p>
-                  </div>
+                    {buyerOrders.length === 0 && (
+                      <div className="text-center py-16 bg-slate-900/10 rounded-3xl border border-slate-900">
+                        <Calendar className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                        <h4 className="font-bold text-white">Your order history is empty.</h4>
+                        <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">Purchase fresh vegetables, grains, or dairy from the marketplace to list transactions here!</p>
+                      </div>
+                    )}
+                  </>
                 )}
               </motion.div>
             )}
@@ -1331,7 +1357,7 @@ export default function BuyerDashboard({
               animate={{ opacity: 0.6 }}
               exit={{ opacity: 0 }}
               onClick={() => setRatingOrder(null)}
-              className="fixed inset-0 bg-slate-9x z-50 cursor-pointer"
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 cursor-pointer"
             />
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}

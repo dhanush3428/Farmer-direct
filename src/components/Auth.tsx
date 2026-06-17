@@ -61,7 +61,7 @@ export const LOCAL_INDIAN_CATEGORIES = [
 ];
 
 interface AuthProps {
-  onLoginSuccess: (role: 'farmer' | 'buyer', profile: FarmerProfile | BuyerProfile) => void;
+  onLoginSuccess: (role: 'farmer' | 'buyer' | 'admin', profile: any) => void;
   onRegisterFarmer: (farmer: Omit<FarmerProfile, 'id'>) => Promise<FarmerProfile>;
   onRegisterBuyer: (buyer: Omit<BuyerProfile, 'id'>) => Promise<BuyerProfile>;
   farmers: FarmerProfile[];
@@ -75,8 +75,8 @@ export default function Auth({
   farmers,
   buyers
 }: AuthProps) {
-  // Screens: 'role-select' | 'buyer-login' | 'farmer-login' | 'buyer-register' | 'farmer-register' | 'farmer-otp'
-  const [screen, setScreen] = useState<'role-select' | 'buyer-login' | 'farmer-login' | 'buyer-register' | 'farmer-register' | 'farmer-otp'>('role-select');
+  // Screens: 'role-select' | 'buyer-login' | 'farmer-login' | 'buyer-register' | 'farmer-register' | 'farmer-otp' | 'admin-login'
+  const [screen, setScreen] = useState<'role-select' | 'buyer-login' | 'farmer-login' | 'buyer-register' | 'farmer-register' | 'farmer-otp' | 'admin-login'>('role-select');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [showPin, setShowPin] = useState(false);
@@ -160,7 +160,7 @@ export default function Auth({
             onLoginSuccess('buyer', { id: userCredential.user.uid, ...defaultBuyer } as BuyerProfile);
           });
         } else {
-          onLoginSuccess('buyer', buyer);
+          onLoginSuccess('buyer', { ...buyer, id: userCredential.user.uid });
         }
       })
       .catch((err: any) => {
@@ -168,6 +168,63 @@ export default function Auth({
         let msg = err.message;
         if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
           msg = 'Invalid Email or 6-Digit Security PIN.';
+        }
+        setError(msg);
+      });
+  };
+
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (!loginEmail || !loginPin) {
+      setError('Please fill in all fields.');
+      return;
+    }
+    if (loginPin.length !== 6 || !/^\d+$/.test(loginPin)) {
+      setError('PIN must be exactly 6 digits.');
+      return;
+    }
+
+    setLoading(true);
+    const authEmail = loginEmail.toLowerCase().trim();
+    if (authEmail === 'admin@farmerdirect.com' && loginPin === '999999') {
+      signInWithEmailAndPassword(auth, authEmail, loginPin)
+        .then((userCredential) => {
+          setLoading(false);
+          onLoginSuccess('admin', {
+            id: userCredential.user.uid,
+            name: 'Market Admin',
+            email: 'admin@farmerdirect.com',
+            pin: '999999'
+          });
+        })
+        .catch(() => {
+          setLoading(false);
+          onLoginSuccess('admin', {
+            id: 'admin-id',
+            name: 'Market Admin',
+            email: 'admin@farmerdirect.com',
+            pin: '999999'
+          });
+        });
+      return;
+    }
+
+    signInWithEmailAndPassword(auth, authEmail, loginPin)
+      .then((userCredential) => {
+        setLoading(false);
+        onLoginSuccess('admin', {
+          id: userCredential.user.uid,
+          name: 'Platform Administrator',
+          email: authEmail,
+          pin: loginPin
+        });
+      })
+      .catch((err: any) => {
+        setLoading(false);
+        let msg = err.message;
+        if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+          msg = 'Invalid Admin Email or 6-Digit Security PIN.';
         }
         setError(msg);
       });
@@ -223,7 +280,7 @@ export default function Auth({
             onLoginSuccess('farmer', { id: userCredential.user.uid, ...defaultFarmer } as FarmerProfile);
           });
         } else {
-          onLoginSuccess('farmer', farmer);
+          onLoginSuccess('farmer', { ...farmer, id: userCredential.user.uid });
         }
       })
       .catch((err: any) => {
@@ -474,7 +531,7 @@ export default function Auth({
                       <div>
                         <h3 className="font-bold text-lg group-hover:text-emerald-400 transition-colors">I am a Farmer</h3>
                         <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                          List your crops, configure quantities, manage pending orders, and track your agricultural earnings directly.
+                          List your crops, configure quantities, manage pending orders, and track agricultural earnings.
                         </p>
                       </div>
                       <div className="flex items-center space-x-2 text-xs font-bold text-emerald-400 mt-6 group-hover:translate-x-1 transition-transform">
@@ -612,6 +669,98 @@ export default function Auth({
                       Don't have an account? Register as Buyer
                     </button>
                   </div>
+                </form>
+              </motion.div>
+            )}
+
+            {/* ADMIN LOGIN SCREEN */}
+            {screen === 'admin-login' && (
+              <motion.div
+                key="admin-login"
+                initial={{ opacity: 0, x: 25 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -25 }}
+                className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl"
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <button 
+                    onClick={handleBackToSelect}
+                    className="flex items-center space-x-2 text-xs text-slate-400 hover:text-white transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Role Selection</span>
+                  </button>
+                  <span className="text-[10px] font-mono px-2.5 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-full font-bold font-mono">ADMIN CONSOLE</span>
+                </div>
+
+                <h2 className="text-2xl font-bold text-white mb-1">Administrative Gateway</h2>
+                <p className="text-slate-400 text-xs mb-6">Authorize secure administrative console privileges.</p>
+
+                {error && (
+                  <div className="p-3 mb-4 text-xs font-medium text-red-400 bg-red-950/40 border border-red-900/40 rounded-xl font-mono">
+                    ⚠️ {error}
+                  </div>
+                )}
+
+                <form onSubmit={handleAdminLogin} className="space-y-4 text-left">
+                  <div>
+                    <label className="block text-xs font-mono text-slate-400 mb-1.5">Admin Email Address</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                      <input
+                        id="admin-login-email-input"
+                        type="email"
+                        required
+                        placeholder="admin@farmerdirect.com"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        className="w-full bg-slate-950 pl-10 pr-4 py-3 rounded-xl border border-slate-800 text-sm focus:outline-none focus:border-purple-400 text-white transition-colors shadow-inner"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="text-xs font-mono text-slate-400">6-Digit Admin PIN</label>
+                      <span className="text-[10px] text-slate-500 font-mono">Default: 999999</span>
+                    </div>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                      <input
+                        id="admin-login-pin-input"
+                        type={showPin ? "text" : "password"}
+                        maxLength={6}
+                        required
+                        placeholder="••••••"
+                        value={loginPin}
+                        onChange={(e) => setLoginPin(e.target.value)}
+                        className="w-full bg-slate-950 pl-10 pr-12 py-3 rounded-xl border border-slate-800 text-sm tracking-widest text-white focus:outline-none focus:border-purple-400 transition-colors shadow-inner"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPin(!showPin)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                      >
+                        {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    id="admin-login-submit"
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-3.5 bg-purple-600 hover:bg-purple-500 active:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-purple-600/15 cursor-pointer"
+                  >
+                    {loading ? (
+                      <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Authorize Admin Rights</span>
+                      </>
+                    )}
+                  </button>
                 </form>
               </motion.div>
             )}

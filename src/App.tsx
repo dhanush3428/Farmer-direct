@@ -40,6 +40,7 @@ import {
 import Auth from './components/Auth';
 import FarmerDashboard from './components/FarmerDashboard';
 import BuyerDashboard from './components/BuyerDashboard';
+import AdminDashboard from './components/AdminDashboard';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocFromServer, query, where } from 'firebase/firestore';
@@ -50,12 +51,13 @@ export default function App() {
   const [buyers, setBuyers] = useState<BuyerProfile[]>([]);
   const [crops, setCrops] = useState<CropProduct[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
   const [feedbacks, setFeedbacks] = useState<FarmerFeedback[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [wishlist, setWishlist] = useState<string[]>([]); // Array of cropProduct IDs
 
   // Session state
-  const [currentUser, setCurrentUser] = useState<{ role: 'farmer' | 'buyer'; profileId: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ role: 'farmer' | 'buyer' | 'admin'; profileId: string } | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
 
   // UI state managers
@@ -139,8 +141,8 @@ export default function App() {
       if (storedOrders) {
         setOrders(JSON.parse(storedOrders));
       } else {
-        setOrders(INITIAL_ORDERS);
-        localStorage.setItem('fd_orders', JSON.stringify(INITIAL_ORDERS));
+        setOrders([]);
+        localStorage.setItem('fd_orders', JSON.stringify([]));
       }
 
       // Feedbacks
@@ -188,6 +190,11 @@ export default function App() {
       return;
     }
 
+    if (!currentUser || currentUser.profileId !== firebaseUser.uid) {
+      // Avoid attaching listeners with mismatching profile IDs during login and restoration transitions
+      return;
+    }
+
     const testConnection = async () => {
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
@@ -209,11 +216,17 @@ export default function App() {
           state: f.location?.split(',')[1]?.trim() || 'Andhra Pradesh',
           mobileNumber: f.contact || '+91 98480 22334'
         }));
+        setFarmers(preseededFarmers);
+        localStorage.setItem('fd_farmers', JSON.stringify(preseededFarmers));
+
         for (const f of preseededFarmers) {
           try {
-            await setDoc(doc(db, 'farmers', f.id), f);
+            // Only try to write if the user owns this document
+            if (firebaseUser.uid === f.id) {
+              await setDoc(doc(db, 'farmers', f.id), f);
+            }
           } catch (e) {
-            console.error('Seeding farmer error:', e);
+            console.warn('Seeding farmer skipped or lacks permission:', e);
           }
         }
       } else {
@@ -248,11 +261,20 @@ export default function App() {
           stock: c.stock || 50,
           harvestDate: '2026-06-12'
         }));
+        setCrops(mappedCrops);
+        localStorage.setItem('fd_crops', JSON.stringify(mappedCrops));
+
+        const isFarmerUser = currentUser?.role === 'farmer';
+        const profileId = currentUser?.profileId || firebaseUser.uid;
+
         for (const crop of mappedCrops) {
           try {
-            await setDoc(doc(db, 'crops', crop.id), crop);
+            // Only seek creation if user is a farmer and owns this crop
+            if (isFarmerUser && crop.farmerId === profileId) {
+              await setDoc(doc(db, 'crops', crop.id), crop);
+            }
           } catch (e) {
-            console.error('Seeding crops error:', e);
+            console.warn('Seeding crops skipped or lacks permission:', e);
           }
         }
       } else {
@@ -275,19 +297,10 @@ export default function App() {
       : query(collection(db, 'orders'), where('buyerId', '==', profileId));
 
     const unsubOrders = onSnapshot(ordersQuery, async (snapshot) => {
+      setOrdersLoading(true);
       if (snapshot.empty) {
-        for (const o of INITIAL_ORDERS) {
-          try {
-            const seededOrder = {
-              ...o,
-              buyerId: !isFarmerUser ? profileId : o.buyerId || 'consumer-1',
-              farmerId: isFarmerUser ? profileId : o.items[0]?.farmerId || 'farmer-1'
-            };
-            await setDoc(doc(db, 'orders', o.id), seededOrder);
-          } catch (e) {
-            // Ignored/skipped
-          }
-        }
+        setOrders([]);
+        localStorage.setItem('fd_orders', JSON.stringify([]));
       } else {
         const list: Order[] = [];
         snapshot.forEach(doc => {
@@ -297,18 +310,27 @@ export default function App() {
         setOrders(list);
         localStorage.setItem('fd_orders', JSON.stringify(list));
       }
+      setOrdersLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'orders');
+      setOrdersLoading(false);
     });
 
     // 5. Feedbacks live-listener (can read all feedbacks once logged in)
     const unsubFeedbacks = onSnapshot(collection(db, 'feedbacks'), async (snapshot) => {
       if (snapshot.empty) {
+        setFeedbacks(INITIAL_FEEDBACKS);
+        localStorage.setItem('fd_feedbacks', JSON.stringify(INITIAL_FEEDBACKS));
+
+        const isBuyerUser = currentUser?.role === 'buyer';
         for (const f of INITIAL_FEEDBACKS) {
           try {
-            await setDoc(doc(db, 'feedbacks', f.id), f);
+            // Only seed feedbacks to Firestore if user is a buyer
+            if (isBuyerUser) {
+              await setDoc(doc(db, 'feedbacks', f.id), f);
+            }
           } catch (e) {
-            console.error('Seeding feedback error:', e);
+            console.warn('Seeding feedback skipped or lacks permission:', e);
           }
         }
       } else {
@@ -337,11 +359,14 @@ export default function App() {
             read: false
           }
         ];
+        setNotifications(defaultNotifications);
+        localStorage.setItem('fd_notifications', JSON.stringify(defaultNotifications));
+
         for (const n of defaultNotifications) {
           try {
             await setDoc(doc(db, 'notifications', n.id), n);
           } catch (e) {
-            console.error('Seeding notifications error:', e);
+            console.warn('Seeding notifications skipped or lacks permission:', e);
           }
         }
       } else {
@@ -369,12 +394,59 @@ export default function App() {
 
   // Sync Firebase Auth states with local session
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       if (!user) {
         if (currentUser) {
           setCurrentUser(null);
           localStorage.removeItem('fd_auth_session');
+        }
+      } else {
+        if (!currentUser || currentUser.profileId !== user.uid) {
+          try {
+            // Check if admin email
+            if (user.email && (user.email.toLowerCase() === 'admin@farmerdirect.com' || user.email.toLowerCase().includes('admin'))) {
+              const session = { role: 'admin' as const, profileId: user.uid };
+              setCurrentUser(session);
+              localStorage.setItem('fd_auth_session', JSON.stringify(session));
+              return;
+            }
+
+            // Check buyers collection first
+            const buyerSnap = await getDocFromServer(doc(db, 'buyers', user.uid));
+            if (buyerSnap.exists()) {
+              const session = { role: 'buyer' as const, profileId: user.uid };
+              setCurrentUser(session);
+              localStorage.setItem('fd_auth_session', JSON.stringify(session));
+              return;
+            }
+            
+            // Check farmers collection
+            const farmerSnap = await getDocFromServer(doc(db, 'farmers', user.uid));
+            if (farmerSnap.exists()) {
+              const session = { role: 'farmer' as const, profileId: user.uid };
+              setCurrentUser(session);
+              localStorage.setItem('fd_auth_session', JSON.stringify(session));
+              return;
+            }
+          } catch (e) {
+            console.warn("Unable to fetch user profile during auth state sync:", e);
+          }
+
+          // Fallback if not physically present in Firestore yet
+          const previousRole = currentUser?.role;
+          const email = user.email || '';
+          let role: 'buyer' | 'farmer' | 'admin' = 'buyer';
+          if (previousRole) {
+            role = previousRole;
+          } else if (email.toLowerCase().includes('admin')) {
+            role = 'admin';
+          } else if (email.toLowerCase().includes('farmer')) {
+            role = 'farmer';
+          }
+          const session = { role, profileId: user.uid };
+          setCurrentUser(session);
+          localStorage.setItem('fd_auth_session', JSON.stringify(session));
         }
       }
     });
@@ -382,8 +454,27 @@ export default function App() {
   }, [currentUser]);
 
   // 3. User operations & Sync callbacks
-  const handleLoginSuccess = (role: 'farmer' | 'buyer', profile: FarmerProfile | BuyerProfile) => {
+  const handleLoginSuccess = (role: 'farmer' | 'buyer' | 'admin', profile: any) => {
     const session = { role, profileId: profile.id };
+    if (role === 'farmer') {
+      setFarmers(prev => {
+        if (!prev.some(f => f.id === profile.id)) {
+          const list = [...prev, profile as FarmerProfile];
+          localStorage.setItem('fd_farmers', JSON.stringify(list));
+          return list;
+        }
+        return prev;
+      });
+    } else if (role === 'buyer') {
+      setBuyers(prev => {
+        if (!prev.some(b => b.id === profile.id)) {
+          const list = [...prev, profile as BuyerProfile];
+          localStorage.setItem('fd_buyers', JSON.stringify(list));
+          return list;
+        }
+        return prev;
+      });
+    }
     setCurrentUser(session);
     localStorage.setItem('fd_auth_session', JSON.stringify(session));
     setAuthView('none');
@@ -486,18 +577,15 @@ export default function App() {
   const handlePlaceOrder = async (items: any[], total: number, address: string, time: string) => {
     if (!currentUser) throw new Error('Must be signed in to purchase.');
 
-    const newOrder: Order = {
-      id: `order-${Math.floor(1000 + Math.random() * 9000)}`,
-      buyerId: currentUser.profileId,
-      buyerName: buyers.find(b => b.id === currentUser.profileId)?.name || 'Anonymous Buyer',
-      buyerContact: buyers.find(b => b.id === currentUser.profileId)?.contact || '+1 (555) 123-4567',
-      date: new Date().toISOString(),
-      items,
-      total,
-      status: 'Pending',
-      deliveryAddress: address,
-      pickupTime: time
-    };
+    // Group items by farmerId to store each order as a separate record
+    const itemsByFarmer: { [farmerId: string]: any[] } = {};
+    for (const item of items) {
+      const fId = item.farmerId || 'farmer-1';
+      if (!itemsByFarmer[fId]) {
+        itemsByFarmer[fId] = [];
+      }
+      itemsByFarmer[fId].push(item);
+    }
 
     // Decrement quantities from products state synonymously
     const updatedCrops = crops.map(c => {
@@ -518,37 +606,77 @@ export default function App() {
     setCrops(updatedCrops);
     localStorage.setItem('fd_crops', JSON.stringify(updatedCrops));
 
-    const updatedOrders = [newOrder, ...orders];
+    const splitOrders: Order[] = [];
+    const timestamp = Date.now();
+    let index = 0;
+
+    for (const fId of Object.keys(itemsByFarmer)) {
+      const farmerItems = itemsByFarmer[fId];
+      const farmerTotal = farmerItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
+      // Ensure unique order ID using timestamp, random factor, and sequence offset
+      const orderId = `order-${timestamp}-${Math.floor(100000 + Math.random() * 900000)}-${index++}`;
+
+      const newOrder: Order = {
+        id: orderId,
+        buyerId: currentUser.profileId,
+        buyerName: buyers.find(b => b.id === currentUser.profileId)?.name || 'Anonymous Buyer',
+        buyerContact: buyers.find(b => b.id === currentUser.profileId)?.contact || '+1 (555) 123-4567',
+        farmerId: fId,
+        date: new Date().toISOString(),
+        items: farmerItems,
+        total: farmerTotal,
+        status: 'Pending',
+        deliveryAddress: address,
+        pickupTime: time
+      };
+      splitOrders.push(newOrder);
+    }
+
+    const updatedOrders = [...splitOrders, ...orders];
     setOrders(updatedOrders);
     localStorage.setItem('fd_orders', JSON.stringify(updatedOrders));
 
     // Push notification alerts
-    const newNotif: AppNotification = {
-      id: `n-${Date.now()}`,
-      userId: currentUser.profileId,
-      title: 'Order Booked Directly!',
-      message: `Your booking #${newOrder.id} has been registered at the farm. Check updates in My Orders.`,
-      date: new Date().toISOString(),
-      read: false
-    };
-    const pushNotificationFarmer: AppNotification = {
-      id: `n-farm-${Date.now()}`,
-      userId: items[0]?.farmerId || '',
-      title: 'New Crop Order Received!',
-      message: `A buyer placed a booking for ${items.length} crops. Total billing value is ₹${total.toFixed(2)}.`,
-      date: new Date().toISOString(),
-      read: false
-    };
+    const newNotifs = [...notifications];
+    const buyerId = currentUser.profileId;
 
-    const newNotifs = [newNotif, pushNotificationFarmer, ...notifications];
+    // Notification for the buyer
+    const newNotif: AppNotification = {
+      id: `n-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      userId: buyerId,
+      title: 'Order Booked Directly!',
+      message: `Your booking(s) for ${items.length} crops have been registered. Check under My Orders.`,
+      date: new Date().toISOString(),
+      read: false
+    };
+    newNotifs.unshift(newNotif);
+
+    // Notification for each farmer and database saving list
+    const spawnedNotifications: AppNotification[] = [newNotif];
+
+    for (const order of splitOrders) {
+      const pushNotificationFarmer: AppNotification = {
+        id: `n-farm-${order.id}`,
+        userId: order.farmerId,
+        title: 'New Crop Order Received!',
+        message: `A buyer placed a booking for ${order.items.length} crops. Total value is ₹${order.total.toFixed(2)}.`,
+        date: new Date().toISOString(),
+        read: false
+      };
+      newNotifs.unshift(pushNotificationFarmer);
+      spawnedNotifications.push(pushNotificationFarmer);
+    }
+
     setNotifications(newNotifs);
     localStorage.setItem('fd_notifications', JSON.stringify(newNotifs));
 
-    // Write new order to Firestore
-    try {
-      await setDoc(doc(db, 'orders', newOrder.id), newOrder);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `orders/${newOrder.id}`);
+    // Write split orders to Firestore
+    for (const o of splitOrders) {
+      try {
+        await setDoc(doc(db, 'orders', o.id), o);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `orders/${o.id}`);
+      }
     }
 
     // Write updated crops back to Firestore
@@ -564,14 +692,15 @@ export default function App() {
     }
 
     // Write notifications to Firestore
-    try {
-      await setDoc(doc(db, 'notifications', newNotif.id), newNotif);
-      await setDoc(doc(db, 'notifications', pushNotificationFarmer.id), pushNotificationFarmer);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'notifications');
+    for (const notif of spawnedNotifications) {
+      try {
+        await setDoc(doc(db, 'notifications', notif.id), notif);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `notifications/${notif.id}`);
+      }
     }
 
-    return newOrder;
+    return splitOrders[0];
   };
 
   // Buyer updates profile fields
@@ -643,8 +772,9 @@ export default function App() {
 
   // Register farmer from Auth callback
   const handleRegisterFarmer = async (farmerData: any): Promise<FarmerProfile> => {
+    const uid = auth.currentUser?.uid || `farmer-${Date.now().toString().slice(-4)}`;
     const newFarmer: FarmerProfile = {
-      id: `farmer-${Date.now().toString().slice(-4)}`,
+      id: uid,
       ...farmerData,
       createdAt: new Date().toISOString()
     };
@@ -662,8 +792,9 @@ export default function App() {
 
   // Register buyer from Auth callback
   const handleRegisterBuyer = async (buyerData: any): Promise<BuyerProfile> => {
+    const uid = auth.currentUser?.uid || `buyer-${Date.now().toString().slice(-4)}`;
     const newBuyer: BuyerProfile = {
-      id: `buyer-${Date.now().toString().slice(-4)}`,
+      id: uid,
       ...buyerData,
       createdAt: new Date().toISOString()
     };
@@ -689,17 +820,41 @@ export default function App() {
   // Get active profiles
   const activeBuyerObj = useMemo(() => {
     if (currentUser?.role === 'buyer') {
-      return buyers.find(b => b.id === currentUser.profileId);
+      const found = buyers.find(b => b.id === currentUser.profileId);
+      if (found) return found;
+      return {
+        id: currentUser.profileId,
+        name: firebaseUser?.displayName || firebaseUser?.email?.split('@')[0] || 'Market Buyer',
+        email: firebaseUser?.email || 'buyer@example.com',
+        pin: '111111',
+        deliveryAddress: 'Visakhapatnam, Andhra Pradesh',
+        contact: '+91 99999 99999'
+      };
     }
     return null;
-  }, [currentUser, buyers]);
+  }, [currentUser, buyers, firebaseUser]);
 
   const activeFarmerObj = useMemo(() => {
     if (currentUser?.role === 'farmer') {
-      return farmers.find(f => f.id === currentUser.profileId);
+      const found = farmers.find(f => f.id === currentUser.profileId);
+      if (found) return found;
+      return {
+        id: currentUser.profileId,
+        name: 'Farmer Partner',
+        farmName: "Grower's Direct Farm",
+        description: 'Pesticide-free local farm producing fresh seasons harvests.',
+        photo: 'https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?auto=format&fit=crop&q=80&w=600',
+        pin: '123456',
+        mobileNumber: '+91 94401 23456',
+        contact: '+91 94401 23456',
+        village: 'Aganampudi',
+        district: 'Visakhapatnam',
+        state: 'Andhra Pradesh',
+        selectedCrops: ['Tomato', 'Onion', 'Rice']
+      };
     }
     return null;
-  }, [currentUser, farmers]);
+  }, [currentUser, farmers, firebaseUser]);
 
   // Filters featured products based on Category Selection
   const displayFeaturedProducts = useMemo(() => {
@@ -734,6 +889,20 @@ export default function App() {
 
   // Session routed dashboards
   if (currentUser) {
+    if (currentUser.role === 'admin') {
+      return (
+        <AdminDashboard 
+          farmers={farmers}
+          buyers={buyers}
+          crops={crops}
+          orders={orders}
+          onUpdateCrops={handleUpdateCrops}
+          onUpdateOrders={handleUpdateOrders}
+          onLogout={handleLogout}
+        />
+      );
+    }
+
     if (currentUser.role === 'farmer' && activeFarmerObj) {
       return (
         <FarmerDashboard 
@@ -754,6 +923,7 @@ export default function App() {
           currentBuyer={activeBuyerObj}
           crops={crops}
           orders={orders}
+          ordersLoading={ordersLoading}
           farmers={farmers}
           feedbacks={feedbacks}
           notifications={notifications}
